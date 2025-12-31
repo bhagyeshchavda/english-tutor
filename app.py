@@ -108,5 +108,5 @@ if audio_info:
         tts.write_to_fp(audio_fp)
         st.audio(audio_fp, format="audio/mp3", autoplay=True)
 
-    except Exception as e:
         st.error(f"Please check your API Key: {e}")
+    except Exception as e:
