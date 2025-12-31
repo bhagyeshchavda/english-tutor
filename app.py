@@ -188,12 +188,12 @@ if enable_vocabulary_tracker:
     if st.session_state.progress["vocabulary"]:
         st.subheader("📚 Vocabulary Learned")
         vocab_df = pd.DataFrame(st.session_state.progress["vocabulary"], columns=["Word", "Meaning", "Example"])
-        st.dataframe(vocab_df, use_container_width=True, hide_index=True)
+        st.dataframe(vocab_df, width="stretch", hide_index=True)  # FIXED: use_container_width -> width="stretch"
     
     if st.session_state.progress["idioms_learned"]:
         st.subheader("🗣️ Idioms & Phrases")
         idioms_df = pd.DataFrame(st.session_state.progress["idioms_learned"], columns=["Idiom", "Meaning", "Usage"])
-        st.dataframe(idioms_df, use_container_width=True, hide_index=True)
+        st.dataframe(idioms_df, width="stretch", hide_index=True)  # FIXED: use_container_width -> width="stretch"
 
 if enable_progress_chart and st.session_state.progress["sessions"] > 1:
     st.subheader("📊 Progress Over Time")
@@ -232,7 +232,7 @@ with cols[1]:
         start_prompt="🗣️ Tap to Record Your English",
         stop_prompt="🔄 Transcribing & Responding...",
         just_once=True,
-        use_container_width=True,
+        width="stretch",  # FIXED: use_container_width -> width="stretch"
         key='advanced_recorder'
     )
 
@@ -344,9 +344,10 @@ if audio_info:
         with st.chat_message("assistant"):
             st.markdown(ai_response)
             
-            # FIXED VOICE WITH ERROR HANDLING & PROMINENT DISPLAY
+            # FIXED VOICE WITH ERROR HANDLING & PROMINENT DISPLAY - MOVED OUTSIDE CHAT FOR RERUN STABILITY
             if enable_voice:
                 try:
+                    st.write("🔊 Generating voice...")  # DEBUG: Confirm block runs
                     speed = 1.0 if st.session_state.user_level == "Beginner" else 1.2
                     tts = gTTS(text=ai_response, lang='en', tld=tld, slow=(speed < 1.0))
                     
@@ -360,21 +361,21 @@ if audio_info:
                     st.session_state.latest_audio["bytes"] = audio_fp.getvalue()
                     st.session_state.latest_audio["format"] = "audio/mp3"
                     
-                    # PROMINENT AUDIO CONTAINER
+                    # PROMINENT AUDIO CONTAINER - WITH KEY FOR RERUN PERSISTENCE
                     st.markdown("---")
                     st.markdown('<div class="audio-container">', unsafe_allow_html=True)
                     st.markdown("**🔊 Tutor Voice Response** (Tap ▶️ to play – ensure volume up!)")
                     
-                    # Audio player
-                    st.audio(st.session_state.latest_audio["bytes"], format=st.session_state.latest_audio["format"])
+                    # Audio player with key
+                    st.audio(st.session_state.latest_audio["bytes"], format=st.session_state.latest_audio["format"], key=f"audio_{len(st.session_state.messages)}")
                     
                     # Extra play button for reliability
-                    if st.button("🔊 Play Tutor Voice Now!", help="Click to hear the full response"):
+                    if st.button("🔊 Play Tutor Voice Now!", help="Click to hear the full response", key=f"play_{len(st.session_state.messages)}"):
                         st.balloons()  # Fun feedback
                         st.rerun()  # Re-renders audio (forces play prompt)
                     
                     st.markdown('</div>', unsafe_allow_html=True)
-                    st.info("💡 Audio generated successfully! If no sound, check browser tab volume or try Chrome/Edge.")
+                    st.success("💡 Audio generated successfully! If no sound, check browser tab volume or try Chrome/Edge.")  # CHANGED TO SUCCESS FOR VISIBILITY
                     
                 except Exception as tts_error:
                     st.error(f"🔇 Voice generation failed: {str(tts_error)}. Falling back to text. (gTTS issue? Check internet.)")
