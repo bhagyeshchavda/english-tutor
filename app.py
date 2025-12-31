@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 from typing import Dict, List, Optional
 import streamlit.components.v1 as components
+
 # --- 1. PAGE CONFIG & ADVANCED STYLING ---
 st.set_page_config(
     page_title="Advanced AI English Tutor",
@@ -16,6 +17,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
 # Custom CSS for modern, responsive design
 st.markdown("""
     <style>
@@ -43,6 +45,7 @@ st.markdown("""
     .progress-fill { height: 100%; background: linear-gradient(90deg, #4CAF50, #45a049); transition: width 0.3s ease; }
     </style>
 """, unsafe_allow_html=True)
+
 # --- 2. ADVANCED SIDEBAR SETTINGS ---
 with st.sidebar:
     st.markdown('<h1 style="color: white; text-align: center;">⚙️ Advanced Settings</h1>', unsafe_allow_html=True)
@@ -99,6 +102,7 @@ with st.sidebar:
     if st.button("📤 Export Chat History"):
         chat_json = json.dumps(st.session_state.messages, indent=2)
         st.download_button("Download JSON", chat_json, "chat_history.json", "application/json")
+
 # --- 3. ENHANCED SESSION STATE ---
 @st.cache_data(ttl=3600) # Cache for 1 hour
 def load_progress():
@@ -113,19 +117,25 @@ def load_progress():
         "idioms_learned": [],
         "pronunciation_notes": []
     }
+
 if "messages" not in st.session_state:
     st.session_state.messages = []
+
 if "progress" not in st.session_state:
     st.session_state.progress = load_progress()
+
 # Update progress on new session
 if not st.session_state.progress["last_session"] or (datetime.now() - st.session_state.progress["last_session"]).days > 1:
     st.session_state.progress["sessions"] += 1
     st.session_state.progress["last_session"] = datetime.now()
+
 # --- 4. MAIN INTERFACE WITH METRICS ---
 col1, col2, col3 = st.columns([1, 2, 1])
+
 with col1:
     st.markdown('<h2 class="main-header">🎓 AI English Tutor</h2>', unsafe_allow_html=True)
     st.caption(f"👤 Style: **{tutor_style}** | 📈 Level: **{st.session_state.user_level}**")
+
 with col3:
     # Progress Metrics
     col31, col32 = st.columns(2)
@@ -134,6 +144,7 @@ with col3:
     with col32:
         fluency_score = min(100, st.session_state.progress["sessions"] * 10 + len(st.session_state.progress["vocabulary"]))
         st.metric("Fluency %", fluency_score, delta=5 if fluency_score > 50 else 0)
+
 # Display chat history with timestamps
 st.subheader("💬 Conversation History")
 for i, message in enumerate(st.session_state.messages):
@@ -145,6 +156,7 @@ for i, message in enumerate(st.session_state.messages):
         # Highlight corrections in AI responses
         if message["role"] == "assistant" and "Correction:" in message["content"]:
             st.markdown("**🔍 Correction Highlighted**")
+
 # Enhanced Trackers
 if enable_vocabulary_tracker:
     if st.session_state.progress["vocabulary"]:
@@ -156,6 +168,7 @@ if enable_vocabulary_tracker:
         st.subheader("🗣️ Idioms & Phrases")
         idioms_df = pd.DataFrame(st.session_state.progress["idioms_learned"], columns=["Idiom", "Meaning", "Usage"])
         st.dataframe(idioms_df, use_container_width=True, hide_index=True)
+
 if enable_progress_chart and st.session_state.progress["sessions"] > 1:
     st.subheader("📊 Progress Over Time")
     chart_data = {
@@ -183,9 +196,11 @@ if enable_progress_chart and st.session_state.progress["sessions"] > 1:
         new Chart(ctx, {chart_data});
     </script>
     """.replace("{chart_data}", json.dumps(chart_data)), height=300)
+
 # --- 5. ADVANCED MIC RECORDER WITH FEEDBACK ---
 st.markdown("---")
 st.subheader("🎙️ Start Speaking! (Tap the Mic Below)")
+
 cols = st.columns([1, 3, 1])
 with cols[1]:
     audio_info = mic_recorder(
@@ -197,6 +212,7 @@ with cols[1]:
         recording_color="#4CAF50",
         idle_color="#f0f0f0"
     )
+
 # --- 6. ENHANCED LOGIC WITH COMPREHENSIVE LEARNING TRACKING ---
 if audio_info:
     try:
@@ -264,7 +280,7 @@ if audio_info:
         - **INSPIRATIONAL ARC**: Build user's confidence – every response advances them toward "top-level" fluency.
         """
        
-        chat_messages = [{"role": "system", "content": SYSTEM_PROMPT}] +
+        chat_messages = [{"role": "system", "content": SYSTEM_PROMPT}] + \
                         [{"role": msg["role"], "content": msg["content"]} for msg in st.session_state.messages[-10:]] # Last 10 for context
        
         # STEP 3: Generate Response
@@ -324,6 +340,7 @@ if audio_info:
         st.error(f"❌ Oops! Error: {str(e)}. Check API key or connection.")
         if "unauthorized" in str(e).lower():
             st.warning("🔑 Invalid API key – please update in sidebar.")
+
 # --- 7. FOOTER WITH TIPS ---
 st.markdown("---")
 st.markdown("""
