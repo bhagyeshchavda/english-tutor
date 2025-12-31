@@ -1,4 +1,5 @@
 import streamlit as st
+import base64  # ADDED: For base64 audio encoding
 from streamlit_mic_recorder import mic_recorder
 from groq import Groq
 from gtts import gTTS
@@ -236,6 +237,9 @@ if audio_info:
         word_count = len(user_text.split())
         st.session_state.progress["total_words"] += word_count
         
+        # Recalculate fluency_score here for use in success message (scope fix)
+        fluency_score = min(100, st.session_state.progress["sessions"] * 10 + len(st.session_state.progress["vocabulary"]))
+        
         # STEP 2: Comprehensive All-in-One System Prompt
         STYLE_ADAPTATIONS = {
             "Friendly": "Be warm, encouraging, and use emojis occasionally. 😊",
@@ -315,7 +319,7 @@ if audio_info:
             st.markdown(ai_response)
         st.session_state.messages.append(ai_message)
         
-        # STEP 4: Advanced TTS with Speed Control - UPGRADED FOR RELIABLE VOICE PLAYBACK
+        # STEP 4: Advanced TTS with Speed Control - FIXED FOR RELIABLE VOICE PLAYBACK
         speed = 1.0 if st.session_state.user_level == "Beginner" else 1.2 # Slower for beginners
         tts = gTTS(text=ai_response, lang='en', tld=tld, slow=(speed < 1.0))
         
@@ -327,36 +331,36 @@ if audio_info:
         audio_base64 = base64.b64encode(audio_fp.read()).decode('utf-8')
         
         # Play Audio Immediately with HTML5 Audio (Better autoplay support after user mic interaction)
+        # Note: Browsers may block autoplay; tap play if needed after first mic use
         components.html(f"""
         <div class="audio-container">
             <audio controls autoplay style="width: 100%;">
                 <source src="data:audio/mp3;base64,{audio_base64}" type="audio/mp3">
                 Your browser does not support the audio element.
             </audio>
-            <p style="text-align: center; color: #666; font-size: 0.9em;">🔊 Tutor Speaking... (Voice response active!)</p>
+            <p style="text-align: center; color: #666; font-size: 0.9em;">🔊 Tutor Speaking Now! (Auto-plays after you speak; tap ▶️ if silent)</p>
         </div>
         """, height=80)
         
         # Feedback Toast
         st.success(f"✅ Response ready! Words spoken: {word_count} | Fluency: {fluency_score}% | New Learnings: {len(st.session_state.progress.get('vocabulary', [])) + len(st.session_state.progress.get('idioms_learned', []))} unlocked!")
         
-        # Estimate audio duration (~150 words per minute, adjust for speed) and delay rerun to let voice finish
-        estimated_duration = (len(ai_response.split()) / 150) * 60 / speed  # Seconds
-        time.sleep(max(3, estimated_duration))  # Min 3s delay, or estimated time
-        
-        # Auto-scroll to bottom (After TTS delay to avoid interrupting playback)
+        # REMOVED: time.sleep() - It blocks Streamlit UI. Let audio play in background while app updates.
+        # Auto-scroll to bottom immediately (audio continues playing)
         st.rerun()
         
     except Exception as e:
         st.error(f"❌ Oops! Error: {str(e)}. Check API key or connection.")
         if "unauthorized" in str(e).lower():
             st.warning("🔑 Invalid API key – please update in sidebar.")
+        elif "base64" in str(e).lower():
+            st.warning("🔧 Missing 'base64' import? Update your code with the latest version above.")
 
 # --- 7. FOOTER WITH TIPS ---
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center; color: #7f8c8d;'>
-    💡 **Pro Tip**: Speak freely – the AI covers EVERY aspect of English in one seamless flow! Voice responses now play reliably like a real tutor.
+    💡 **Pro Tip**: Speak freely – the AI covers EVERY aspect of English in one seamless flow! Voice auto-plays like a real tutor (may need one tap after mic).
     <br> Built with ❤️ using Streamlit & Groq. Share your mastery journey!
 </div>
 """, unsafe_allow_html=True)
