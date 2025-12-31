@@ -1,5 +1,5 @@
 import streamlit as st
-import base64  # ADDED: For base64 audio encoding
+import base64  # For base64 audio encoding
 from streamlit_mic_recorder import mic_recorder
 from groq import Groq
 from gtts import gTTS
@@ -19,7 +19,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for modern, responsive design
+# Custom CSS for modern, responsive design + Auto-scroll fix
 st.markdown("""
     <style>
     .stApp {
@@ -45,6 +45,8 @@ st.markdown("""
     .progress-bar { height: 20px; background: #e0e0e0; border-radius: 10px; overflow: hidden; }
     .progress-fill { height: 100%; background: linear-gradient(90deg, #4CAF50, #45a049); transition: width 0.3s ease; }
     .audio-container { width: 100%; margin: 10px 0; }
+    /* Auto-scroll to bottom for chat */
+    .stApp > section > div > div > div { overflow-y: auto; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -94,6 +96,10 @@ with st.sidebar:
                          index=0,
                          help="Choose the Groq model for responses.")
     
+    # NEW: Voice enable/disable
+    enable_voice = st.checkbox("🔊 Enable Tutor Voice (AI Speaking)", value=True,
+                               help="Toggle to hear the tutor speak responses.")
+    
     # Enable/disable features
     enable_vocabulary_tracker = st.checkbox("📚 Vocabulary Tracker", value=True)
     enable_progress_chart = st.checkbox("📊 Progress Chart", value=True)
@@ -134,7 +140,7 @@ if not st.session_state.progress["last_session"] or (datetime.now() - st.session
 col1, col2, col3 = st.columns([1, 2, 1])
 with col1:
     st.markdown('<h2 class="main-header">🎓 AI English Tutor</h2>', unsafe_allow_html=True)
-    st.caption(f"👤 Style: **{tutor_style}** | 📈 Level: **{st.session_state.user_level}**")
+    st.caption(f"👤 Style: **{tutor_style}** | 📈 Level: **{st.session_state.user_level}** | 🔊 Voice: **{'On' if enable_voice else 'Off'}**")
 
 with col3:
     # Progress Metrics
@@ -145,17 +151,36 @@ with col3:
         fluency_score = min(100, st.session_state.progress["sessions"] * 10 + len(st.session_state.progress["vocabulary"]))
         st.metric("Fluency %", fluency_score, delta=5 if fluency_score > 50 else 0)
 
-# Display chat history with timestamps
+# --- 4.5 AUTO-SCROLL TO BOTTOM FIX (JavaScript) ---
+def auto_scroll():
+    components.html("""
+    <script>
+    const scrollToBottom = () => {
+        const appView = window.parent.document.querySelector('.stAppViewContainer');
+        if (appView) {
+            appView.scrollTop = appView.scrollHeight;
+        }
+    };
+    scrollToBottom();
+    </script>
+    """, height=0)
+
+# Display chat history with timestamps (New messages append at bottom naturally)
 st.subheader("💬 Conversation History")
-for i, message in enumerate(st.session_state.messages):
-    timestamp = message.get("timestamp", datetime.now().strftime("%H:%M"))
-    with st.chat_message(message["role"], avatar="👤" if message["role"] == "user" else "🤖"):
-        st.caption(f"🕒 {timestamp}")
-        st.markdown(message["content"])
-        
-        # Highlight corrections in AI responses
-        if message["role"] == "assistant" and "Correction:" in message["content"]:
-            st.markdown("**🔍 Correction Highlighted**")
+chat_container = st.container()
+with chat_container:
+    for i, message in enumerate(st.session_state.messages):
+        timestamp = message.get("timestamp", datetime.now().strftime("%H:%M"))
+        with st.chat_message(message["role"], avatar="👤" if message["role"] == "user" else "🤖"):
+            st.caption(f"🕒 {timestamp}")
+            st.markdown(message["content"])
+            
+            # Highlight corrections in AI responses
+            if message["role"] == "assistant" and "Correction:" in message["content"]:
+                st.markdown("**🔍 Correction Highlighted**")
+
+# Auto-scroll after history
+auto_scroll()
 
 # Enhanced Trackers
 if enable_vocabulary_tracker:
@@ -317,50 +342,53 @@ if audio_info:
         ai_message = {"role": "assistant", "content": ai_response, "timestamp": datetime.now().strftime("%H:%M")}
         with st.chat_message("assistant"):
             st.markdown(ai_response)
+            
+            # FIXED VOICE: Use st.audio with play button (no autoplay issues) + Voice toggle
+            if enable_voice:
+                speed = 1.0 if st.session_state.user_level == "Beginner" else 1.2
+                tts = gTTS(text=ai_response, lang='en', tld=tld, slow=(speed < 1.0))
+                
+                audio_fp = io.BytesIO()
+                tts.write_to_fp(audio_fp)
+                audio_fp.seek(0)
+                
+                # Save audio bytes to session_state for download/play
+                if "latest_audio" not in st.session_state:
+                    st.session_state.latest_audio = {}
+                st.session_state.latest_audio["bytes"] = audio_fp.getvalue()
+                st.session_state.latest_audio["format"] = "audio/mp3"
+                
+                # Display play button + audio
+                col_audio1, col_audio2 = st.columns([3, 1])
+                with col_audio1:
+                    st.audio(st.session_state.latest_audio["bytes"], format=st.session_state.latest_audio["format"])
+                with col_audio2:
+                    if st.button("🔊 Play Tutor Voice", key=f"play_{len(st.session_state.messages)}"):
+                        # Force re-render to play (simple toggle)
+                        st.session_state.play_trigger = time.time()
+        
         st.session_state.messages.append(ai_message)
         
-        # STEP 4: Advanced TTS with Speed Control - FIXED FOR RELIABLE VOICE PLAYBACK
-        speed = 1.0 if st.session_state.user_level == "Beginner" else 1.2 # Slower for beginners
-        tts = gTTS(text=ai_response, lang='en', tld=tld, slow=(speed < 1.0))
-        
-        audio_fp = io.BytesIO()
-        tts.write_to_fp(audio_fp)
-        audio_fp.seek(0)
-        
-        # Encode audio to base64 for HTML embedding (more reliable autoplay)
-        audio_base64 = base64.b64encode(audio_fp.read()).decode('utf-8')
-        
-        # Play Audio Immediately with HTML5 Audio (Better autoplay support after user mic interaction)
-        # Note: Browsers may block autoplay; tap play if needed after first mic use
-        components.html(f"""
-        <div class="audio-container">
-            <audio controls autoplay style="width: 100%;">
-                <source src="data:audio/mp3;base64,{audio_base64}" type="audio/mp3">
-                Your browser does not support the audio element.
-            </audio>
-            <p style="text-align: center; color: #666; font-size: 0.9em;">🔊 Tutor Speaking Now! (Auto-plays after you speak; tap ▶️ if silent)</p>
-        </div>
-        """, height=80)
-        
         # Feedback Toast
-        st.success(f"✅ Response ready! Words spoken: {word_count} | Fluency: {fluency_score}% | New Learnings: {len(st.session_state.progress.get('vocabulary', [])) + len(st.session_state.progress.get('idioms_learned', []))} unlocked!")
+        st.success(f"✅ Response ready! Words spoken: {word_count} | Fluency: {fluency_score}% | New Learnings: {len(st.session_state.progress.get('vocabulary', [])) + len(st.session_state.progress.get('idioms_learned', []))} unlocked! {'(Voice ready – tap ▶️)' if enable_voice else ''}")
         
-        # REMOVED: time.sleep() - It blocks Streamlit UI. Let audio play in background while app updates.
-        # Auto-scroll to bottom immediately (audio continues playing)
+        # Auto-scroll and rerun (now with container, scrolls better)
+        auto_scroll()
         st.rerun()
         
     except Exception as e:
         st.error(f"❌ Oops! Error: {str(e)}. Check API key or connection.")
         if "unauthorized" in str(e).lower():
             st.warning("🔑 Invalid API key – please update in sidebar.")
-        elif "base64" in str(e).lower():
-            st.warning("🔧 Missing 'base64' import? Update your code with the latest version above.")
+
+# Final auto-scroll
+auto_scroll()
 
 # --- 7. FOOTER WITH TIPS ---
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center; color: #7f8c8d;'>
-    💡 **Pro Tip**: Speak freely – the AI covers EVERY aspect of English in one seamless flow! Voice auto-plays like a real tutor (may need one tap after mic).
+    💡 **Pro Tip**: Speak freely – the AI covers EVERY aspect of English in one seamless flow! Toggle voice in sidebar & tap ▶️ to hear tutor speak.
     <br> Built with ❤️ using Streamlit & Groq. Share your mastery journey!
 </div>
 """, unsafe_allow_html=True)
