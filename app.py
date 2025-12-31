@@ -294,61 +294,33 @@ if audio_info:
         chat_messages = [{"role": "system", "content": SYSTEM_PROMPT}] + \
                         [{"role": msg["role"], "content": msg["content"]} for msg in st.session_state.messages[-10:]] # Last 10 for context
        
-        # STEP 3: Generate Response
-        with st.spinner("🤔 AI is thinking..."):
-            completion = client.chat.completions.create(
-                model=model,
-                messages=chat_messages,
-                temperature=0.7 if tutor_style in ["Friendly", "Humorous"] else 0.5,
-                max_tokens=300 # Slightly more for richer content
-            )
-            ai_response = completion.choices[0].message.content
-       
-        # Enhanced Parsing for All Trackers
-        tags = {
-            "VOCAB": ("vocabulary", lambda parts: {"Word": parts[0].strip(), "Meaning": parts[1].strip(), "Example": parts[2].strip()}),
-            "IDIOM": ("idioms_learned", lambda parts: {"Idiom": parts[0].strip(), "Meaning": parts[1].strip(), "Usage": parts[2].strip()}),
-            "GRAMMAR": ("grammar_tips", lambda parts: {"Rule": parts[0].strip(), "Example": " | ".join(parts[1:]).strip()}),
-            "PRONUN": ("pronunciation_notes", lambda parts: {"Tip": " | ".join(parts).strip()}),
-            "CULTURE": ("grammar_tips", lambda parts: {"Cultural Note": " | ".join(parts).strip()}), # Reuse for simplicity
-            "ACHIEVE": ("achievements", lambda parts: [" | ".join(parts).strip()])
-        }
-       
-        for tag, (key, parser) in tags.items():
-            if f"[{tag}:" in ai_response:
-                matches = [m.split("]")[0].split("|") for m in ai_response.split(f"[{tag}:") if "|" in m and "]" in m]
-                for match in matches:
-                    if len(match) >= 2:
-                        item = parser(match)
-                        if isinstance(st.session_state.progress[key], list):
-                            st.session_state.progress[key].append(item)
-                        st.session_state.progress["corrections_made"] += 1 if tag == "ACHIEVE" else 0
-       
-        # Display AI Response (Textual reply - kept as is)
-        ai_message = {"role": "assistant", "content": ai_response, "timestamp": datetime.now().strftime("%H:%M")}
-        with st.chat_message("assistant"):
-            st.markdown(ai_response)
-       
-        st.session_state.messages.append(ai_message)
-       
-        # STEP 3: Voice (Exactly like V1 - Auto-play after response, no seek(0) to match V1, outside for stability)
+        # STEP 3: Voice (Fixed for V2)
         if enable_voice:
             try:
-                tts = gTTS(text=ai_response, lang='en', tld=tld)
+                # Clean the response text of the technical tags [VOCAB:...] 
+                # so the AI doesn't read the code out loud
+                clean_audio_text = ai_response
+                for tag in ["VOCAB", "IDIOM", "GRAMMAR", "PRONUN", "CULTURE", "ACHIEVE"]:
+                    import re
+                    clean_audio_text = re.sub(f"\\[{tag}:.*?\\]", "", clean_audio_text)
+
+                tts = gTTS(text=clean_audio_text, lang='en', tld=tld)
                 audio_fp = io.BytesIO()
                 tts.write_to_fp(audio_fp)
+                
+                # IMPORTANT: Reset the pointer to the start of the file
+                audio_fp.seek(0) 
+                
+                # Place audio at the very end of the logic to ensure it triggers
                 st.audio(audio_fp, format="audio/mp3", autoplay=True)
-                st.success("💡 Audio generated successfully! If no sound, check browser tab volume or try Chrome/Edge.")
-               
+                
             except Exception as tts_error:
-                st.error(f"🔇 Voice generation failed: {str(tts_error)}. Falling back to text. (gTTS issue? Check internet.)")
-                st.info("Quick Fix: Ensure gTTS is installed & internet is on. Voice disabled for this response.")
-       
-        # Feedback Toast
-        voice_status = " (Voice ready – auto-playing!)" if enable_voice else " (Text-only mode)"
-        st.success(f"✅ Response ready! Words spoken: {word_count} | Fluency: {fluency_score}% | New Learnings: {len(st.session_state.progress.get('vocabulary', [])) + len(st.session_state.progress.get('idioms_learned', []))} unlocked!{voice_status}")
-       
-        # Auto-scroll (no st.rerun() to prevent interrupting audio playback)
+                st.error(f"🔇 Voice generation failed: {tts_error}")
+
+        # Feedback Toast (Moved after audio to prevent interruption)
+        st.toast(f"✅ Fluency: {fluency_score}% | Words: {word_count}")
+        
+        # Force a small rerun or just rely on auto_scroll
         auto_scroll()
        
     except Exception as e:
