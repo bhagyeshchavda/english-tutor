@@ -1,5 +1,5 @@
 import streamlit as st
-import base64  # For base64 audio encoding
+import base64  # For base64 audio encoding (backup)
 from streamlit_mic_recorder import mic_recorder
 from groq import Groq
 from gtts import gTTS
@@ -19,7 +19,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for modern, responsive design + Auto-scroll fix
+# Custom CSS for modern, responsive design + Auto-scroll fix + Audio styling
 st.markdown("""
     <style>
     .stApp {
@@ -44,7 +44,8 @@ st.markdown("""
     .metric-card { background: white; padding: 1rem; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
     .progress-bar { height: 20px; background: #e0e0e0; border-radius: 10px; overflow: hidden; }
     .progress-fill { height: 100%; background: linear-gradient(90deg, #4CAF50, #45a049); transition: width 0.3s ease; }
-    .audio-container { width: 100%; margin: 10px 0; }
+    .audio-container { width: 100%; margin: 10px 0; padding: 10px; background: #f0f8ff; border-radius: 8px; border-left: 4px solid #4CAF50; }
+    .voice-button { background-color: #4CAF50; color: white; border: none; padding: 8px 16px; border-radius: 20px; cursor: pointer; font-size: 14px; }
     /* Auto-scroll to bottom for chat */
     .stApp > section > div > div > div { overflow-y: auto; }
     </style>
@@ -96,9 +97,9 @@ with st.sidebar:
                          index=0,
                          help="Choose the Groq model for responses.")
     
-    # NEW: Voice enable/disable
+    # Voice enable/disable
     enable_voice = st.checkbox("🔊 Enable Tutor Voice (AI Speaking)", value=True,
-                               help="Toggle to hear the tutor speak responses.")
+                               help="Toggle to hear the tutor speak responses. If no sound, check browser volume & tap play button.")
     
     # Enable/disable features
     enable_vocabulary_tracker = st.checkbox("📚 Vocabulary Tracker", value=True)
@@ -343,34 +344,47 @@ if audio_info:
         with st.chat_message("assistant"):
             st.markdown(ai_response)
             
-            # FIXED VOICE: Use st.audio with play button (no autoplay issues) + Voice toggle
+            # FIXED VOICE WITH ERROR HANDLING & PROMINENT DISPLAY
             if enable_voice:
-                speed = 1.0 if st.session_state.user_level == "Beginner" else 1.2
-                tts = gTTS(text=ai_response, lang='en', tld=tld, slow=(speed < 1.0))
-                
-                audio_fp = io.BytesIO()
-                tts.write_to_fp(audio_fp)
-                audio_fp.seek(0)
-                
-                # Save audio bytes to session_state for download/play
-                if "latest_audio" not in st.session_state:
-                    st.session_state.latest_audio = {}
-                st.session_state.latest_audio["bytes"] = audio_fp.getvalue()
-                st.session_state.latest_audio["format"] = "audio/mp3"
-                
-                # Display play button + audio
-                col_audio1, col_audio2 = st.columns([3, 1])
-                with col_audio1:
+                try:
+                    speed = 1.0 if st.session_state.user_level == "Beginner" else 1.2
+                    tts = gTTS(text=ai_response, lang='en', tld=tld, slow=(speed < 1.0))
+                    
+                    audio_fp = io.BytesIO()
+                    tts.write_to_fp(audio_fp)
+                    audio_fp.seek(0)
+                    
+                    # Save audio bytes to session_state for download/play
+                    if "latest_audio" not in st.session_state:
+                        st.session_state.latest_audio = {}
+                    st.session_state.latest_audio["bytes"] = audio_fp.getvalue()
+                    st.session_state.latest_audio["format"] = "audio/mp3"
+                    
+                    # PROMINENT AUDIO CONTAINER
+                    st.markdown("---")
+                    st.markdown('<div class="audio-container">', unsafe_allow_html=True)
+                    st.markdown("**🔊 Tutor Voice Response** (Tap ▶️ to play – ensure volume up!)")
+                    
+                    # Audio player
                     st.audio(st.session_state.latest_audio["bytes"], format=st.session_state.latest_audio["format"])
-                with col_audio2:
-                    if st.button("🔊 Play Tutor Voice", key=f"play_{len(st.session_state.messages)}"):
-                        # Force re-render to play (simple toggle)
-                        st.session_state.play_trigger = time.time()
+                    
+                    # Extra play button for reliability
+                    if st.button("🔊 Play Tutor Voice Now!", help="Click to hear the full response"):
+                        st.balloons()  # Fun feedback
+                        st.rerun()  # Re-renders audio (forces play prompt)
+                    
+                    st.markdown('</div>', unsafe_allow_html=True)
+                    st.info("💡 Audio generated successfully! If no sound, check browser tab volume or try Chrome/Edge.")
+                    
+                except Exception as tts_error:
+                    st.error(f"🔇 Voice generation failed: {str(tts_error)}. Falling back to text. (gTTS issue? Check internet.)")
+                    st.info("Quick Fix: Ensure gTTS is installed & internet is on. Voice disabled for this response.")
         
         st.session_state.messages.append(ai_message)
         
         # Feedback Toast
-        st.success(f"✅ Response ready! Words spoken: {word_count} | Fluency: {fluency_score}% | New Learnings: {len(st.session_state.progress.get('vocabulary', [])) + len(st.session_state.progress.get('idioms_learned', []))} unlocked! {'(Voice ready – tap ▶️)' if enable_voice else ''}")
+        voice_status = " (Voice ready – tap ▶️!)" if enable_voice else " (Text-only mode)"
+        st.success(f"✅ Response ready! Words spoken: {word_count} | Fluency: {fluency_score}% | New Learnings: {len(st.session_state.progress.get('vocabulary', [])) + len(st.session_state.progress.get('idioms_learned', []))} unlocked!{voice_status}")
         
         # Auto-scroll and rerun (now with container, scrolls better)
         auto_scroll()
@@ -388,7 +402,7 @@ auto_scroll()
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center; color: #7f8c8d;'>
-    💡 **Pro Tip**: Speak freely – the AI covers EVERY aspect of English in one seamless flow! Toggle voice in sidebar & tap ▶️ to hear tutor speak.
+    💡 **Pro Tip**: Speak freely – the AI covers EVERY aspect of English in one seamless flow! For voice: Tap mic first, then ▶️ on audio player. No sound? Check volume/browser (Chrome best).
     <br> Built with ❤️ using Streamlit & Groq. Share your mastery journey!
 </div>
 """, unsafe_allow_html=True)
