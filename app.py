@@ -228,7 +228,7 @@ if audio_info:
        
         if not user_text:
             st.warning("😶 No speech detected. Please try again!")
-            return
+            st.stop()
        
         # Add timestamp
         user_message = {"role": "user", "content": user_text, "timestamp": datetime.now().strftime("%H:%M")}
