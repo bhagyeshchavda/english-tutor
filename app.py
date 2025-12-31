@@ -371,4 +371,4 @@ st.markdown("""
     💡 **Pro Tip**: Speak freely – the AI covers EVERY aspect of English in one seamless flow! For voice: Tap mic first, then listen for auto-play. No sound? Check volume/browser (Chrome best).
     <br> Built with ❤️ using Streamlit & Groq. Share your mastery journey!
 </div>
-""", unsafe_allow_html=True)
+""", unsafe_allow_html=True) 
