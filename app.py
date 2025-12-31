@@ -331,19 +331,13 @@ if audio_info:
        
         st.session_state.messages.append(ai_message)
        
-        # STEP 3: Voice (Like V1 - Auto-play after response, outside chat_message for stability)
+        # STEP 3: Voice (Exactly like V1 - Auto-play after response, no seek(0) to match V1, outside for stability)
         if enable_voice:
             try:
-                speed = 1.0 if st.session_state.user_level == "Beginner" else 1.2
-                tts = gTTS(text=ai_response, lang='en', tld=tld, slow=(speed < 1.0))
-               
+                tts = gTTS(text=ai_response, lang='en', tld=tld)
                 audio_fp = io.BytesIO()
                 tts.write_to_fp(audio_fp)
-                audio_fp.seek(0)
-               
-                # Play audio directly with autoplay (like V1)
                 st.audio(audio_fp, format="audio/mp3", autoplay=True)
-               
                 st.success("💡 Audio generated successfully! If no sound, check browser tab volume or try Chrome/Edge.")
                
             except Exception as tts_error:
@@ -354,9 +348,8 @@ if audio_info:
         voice_status = " (Voice ready – auto-playing!)" if enable_voice else " (Text-only mode)"
         st.success(f"✅ Response ready! Words spoken: {word_count} | Fluency: {fluency_score}% | New Learnings: {len(st.session_state.progress.get('vocabulary', [])) + len(st.session_state.progress.get('idioms_learned', []))} unlocked!{voice_status}")
        
-        # Auto-scroll and rerun (now with container, scrolls better)
+        # Auto-scroll (no st.rerun() to prevent interrupting audio playback)
         auto_scroll()
-        st.rerun()
        
     except Exception as e:
         st.error(f"❌ Oops! Error: {str(e)}. Check API key or connection.")
@@ -371,4 +364,4 @@ st.markdown("""
     💡 **Pro Tip**: Speak freely – the AI covers EVERY aspect of English in one seamless flow! For voice: Tap mic first, then listen for auto-play. No sound? Check volume/browser (Chrome best).
     <br> Built with ❤️ using Streamlit & Groq. Share your mastery journey!
 </div>
-""", unsafe_allow_html=True) 
+""", unsafe_allow_html=True)
