@@ -1,112 +1,394 @@
 import streamlit as st
+import base64  # For base64 audio encoding
 from streamlit_mic_recorder import mic_recorder
 from groq import Groq
 from gtts import gTTS
 import io
+import json
+import time
+from datetime import datetime, timedelta
+import pandas as pd
+from typing import Dict, List, Optional
+import streamlit.components.v1 as components
 
-# --- 1. PAGE CONFIG & STYLING ---
-st.set_page_config(page_title="English Tutor AI", page_icon="🎙️", layout="centered")
+# --- 1. PAGE CONFIG & ADVANCED STYLING ---
+st.set_page_config(
+    page_title="Advanced AI English Tutor",
+    page_icon="🎓",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-# Custom CSS for a cleaner Mobile look
+# Custom CSS for modern, responsive design + Auto-scroll fix
 st.markdown("""
     <style>
-    .stApp { background-color: #f8f9fa; }
-    .st-emotion-cache-1c7n2ka { max-width: 700px; margin: auto; }
-    [data-testid="stSidebar"] { background-color: #ffffff; border-right: 1px solid #ddd; }
+    .stApp {
+        background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+    .main-header {
+        text-align: center;
+        color: #2c3e50;
+        font-size: 2.5em;
+        margin-bottom: 0.5em;
+        text-shadow: 1px 1px 2px rgba(0,0,0,0.1);
+    }
+    .st-emotion-cache-1c7n2ka { max-width: 1200px; margin: auto; }
+    [data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border-radius: 0 10px 10px 0;
+    }
+    .sidebar .stSelectbox > label { color: white; font-weight: bold; }
+    .sidebar .stRadio > label { color: white; }
+    .metric-card { background: white; padding: 1rem; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+    .progress-bar { height: 20px; background: #e0e0e0; border-radius: 10px; overflow: hidden; }
+    .progress-fill { height: 100%; background: linear-gradient(90deg, #4CAF50, #45a049); transition: width 0.3s ease; }
+    .audio-container { width: 100%; margin: 10px 0; }
+    /* Auto-scroll to bottom for chat */
+    .stApp > section > div > div > div { overflow-y: auto; }
     </style>
 """, unsafe_allow_html=True)
 
-# --- 2. SIDEBAR SETTINGS ---
+# --- 2. ADVANCED SIDEBAR SETTINGS ---
 with st.sidebar:
-    st.title("⚙️ Tutor Settings")
-    GROQ_API_KEY = st.text_input("Enter Groq API Key", type="password", value="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")
+    st.markdown('<h1 style="color: white; text-align: center;">⚙️ Advanced Settings</h1>', unsafe_allow_html=True)
+    
+    # API Key with secure input
+    GROQ_API_KEY = st.text_input("🔑 Groq API Key", type="password",
+                                 help="Get your key from groq.com",
+                                 value="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")
+    
+    if not GROQ_API_KEY:
+        st.warning("⚠️ Please enter your Groq API Key to start!")
+        st.stop()
+    
     client = Groq(api_key=GROQ_API_KEY)
     
     st.divider()
-    tutor_style = st.selectbox("Teaching Style", ["Friendly", "Strict", "Professional"])
-    accent = st.radio("English Accent", ["US (American)", "UK (British)"], index=0)
-    tld = 'com' if "US" in accent else 'co.uk'
+    
+    # Enhanced tutor options
+    tutor_style = st.selectbox("👤 Teaching Style",
+                               ["Friendly", "Strict", "Professional", "Motivational", "Humorous"],
+                               index=0,
+                               help="Choose how the tutor interacts with you.")
+    
+    accent = st.radio("🌍 English Accent",
+                      ["US (American)", "UK (British)", "AU (Australian)", "IN (Indian)"],
+                      index=0,
+                      help="Select the accent for TTS.")
+    tld_map = {'US (American)': 'com', 'UK (British)': 'co.uk', 'AU (Australian)': 'com.au', 'IN (Indian)': 'com'}
+    tld = tld_map.get(accent, 'com')
+    
+    # User level with persistence
+    if "user_level" not in st.session_state:
+        st.session_state.user_level = "Beginner"
+    
+    level = st.selectbox("📈 Your Current Level",
+                         ["Beginner", "Intermediate", "Advanced"],
+                         index=["Beginner", "Intermediate", "Advanced"].index(st.session_state.user_level),
+                         help="This adapts the difficulty.")
+    st.session_state.user_level = level
+    
+    # Model selection
+    model = st.selectbox("🤖 AI Model",
+                         ["llama-3.3-70b-versatile", "llama-3.1-70b-versatile", "mixtral-8x7b-32768"],
+                         index=0,
+                         help="Choose the Groq model for responses.")
+    
+    # NEW: Voice enable/disable
+    enable_voice = st.checkbox("🔊 Enable Tutor Voice (AI Speaking)", value=True,
+                               help="Toggle to hear the tutor speak responses.")
+    
+    # Enable/disable features
+    enable_vocabulary_tracker = st.checkbox("📚 Vocabulary Tracker", value=True)
+    enable_progress_chart = st.checkbox("📊 Progress Chart", value=True)
+    
+    st.divider()
+    st.markdown("### 🔗 Share & Export")
+    share_url = st.text_input("Share Link", value=f"https://share.streamlit.io/your-app-url", disabled=True)
+    if st.button("📤 Export Chat History"):
+        chat_json = json.dumps(st.session_state.messages, indent=2)
+        st.download_button("Download JSON", chat_json, "chat_history.json", "application/json")
 
-# --- 3. SESSION STATE ---
+# --- 3. ENHANCED SESSION STATE ---
+@st.cache_data(ttl=3600) # Cache for 1 hour
+def load_progress():
+    return {
+        "sessions": 0,
+        "total_words": 0,
+        "corrections_made": 0,
+        "last_session": None,
+        "vocabulary": [],
+        "achievements": [],
+        "grammar_tips": [],
+        "idioms_learned": [],
+        "pronunciation_notes": []
+    }
+
 if "messages" not in st.session_state:
     st.session_state.messages = []
+if "progress" not in st.session_state:
+    st.session_state.progress = load_progress()
 
-# --- 4. MAIN INTERFACE ---
-st.title("🎙️ AI English Tutor")
-st.caption(f"Currently in **{tutor_style}** mode. Speak to start learning!")
+# Update progress on new session
+if not st.session_state.progress["last_session"] or (datetime.now() - st.session_state.progress["last_session"]).days > 1:
+    st.session_state.progress["sessions"] += 1
+    st.session_state.progress["last_session"] = datetime.now()
 
-# Display chat history in bubbles
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
+# --- 4. MAIN INTERFACE WITH METRICS ---
+col1, col2, col3 = st.columns([1, 2, 1])
+with col1:
+    st.markdown('<h2 class="main-header">🎓 AI English Tutor</h2>', unsafe_allow_html=True)
+    st.caption(f"👤 Style: **{tutor_style}** | 📈 Level: **{st.session_state.user_level}** | 🔊 Voice: **{'On' if enable_voice else 'Off'}**")
 
-# --- 5. THE MIC (The Floating Control) ---
-st.write("---")
-cols = st.columns([1, 2, 1])
+with col3:
+    # Progress Metrics
+    col31, col32 = st.columns(2)
+    with col31:
+        st.metric("Sessions", st.session_state.progress["sessions"])
+    with col32:
+        fluency_score = min(100, st.session_state.progress["sessions"] * 10 + len(st.session_state.progress["vocabulary"]))
+        st.metric("Fluency %", fluency_score, delta=5 if fluency_score > 50 else 0)
+
+# --- 4.5 AUTO-SCROLL TO BOTTOM FIX (JavaScript) ---
+def auto_scroll():
+    components.html("""
+    <script>
+    const scrollToBottom = () => {
+        const appView = window.parent.document.querySelector('.stAppViewContainer');
+        if (appView) {
+            appView.scrollTop = appView.scrollHeight;
+        }
+    };
+    scrollToBottom();
+    </script>
+    """, height=0)
+
+# Display chat history with timestamps (New messages append at bottom naturally)
+st.subheader("💬 Conversation History")
+chat_container = st.container()
+with chat_container:
+    for i, message in enumerate(st.session_state.messages):
+        timestamp = message.get("timestamp", datetime.now().strftime("%H:%M"))
+        with st.chat_message(message["role"], avatar="👤" if message["role"] == "user" else "🤖"):
+            st.caption(f"🕒 {timestamp}")
+            st.markdown(message["content"])
+            
+            # Highlight corrections in AI responses
+            if message["role"] == "assistant" and "Correction:" in message["content"]:
+                st.markdown("**🔍 Correction Highlighted**")
+
+# Auto-scroll after history
+auto_scroll()
+
+# Enhanced Trackers
+if enable_vocabulary_tracker:
+    if st.session_state.progress["vocabulary"]:
+        st.subheader("📚 Vocabulary Learned")
+        vocab_df = pd.DataFrame(st.session_state.progress["vocabulary"], columns=["Word", "Meaning", "Example"])
+        st.dataframe(vocab_df, use_container_width=True, hide_index=True)
+    
+    if st.session_state.progress["idioms_learned"]:
+        st.subheader("🗣️ Idioms & Phrases")
+        idioms_df = pd.DataFrame(st.session_state.progress["idioms_learned"], columns=["Idiom", "Meaning", "Usage"])
+        st.dataframe(idioms_df, use_container_width=True, hide_index=True)
+
+if enable_progress_chart and st.session_state.progress["sessions"] > 1:
+    st.subheader("📊 Progress Over Time")
+    chart_data = {
+        "type": "line",
+        "data": {
+            "labels": [f"Session {i+1}" for i in range(st.session_state.progress["sessions"])],
+            "datasets": [{
+                "label": "Fluency Score",
+                "data": [min(100, i * 10 + j * 2) for i, j in enumerate(range(st.session_state.progress["sessions"]))], # Simulated progress
+                "borderColor": "#4CAF50",
+                "backgroundColor": "rgba(76, 175, 80, 0.2)",
+                "fill": True
+            }]
+        },
+        "options": {
+            "responsive": True,
+            "scales": {"y": {"beginAtZero": True, "max": 100}}
+        }
+    }
+    components.html(f"""
+    <canvas id="progressChart" width="400" height="200"></canvas>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        const ctx = document.getElementById('progressChart').getContext('2d');
+        new Chart(ctx, {chart_data});
+    </script>
+    """.replace("{chart_data}", json.dumps(chart_data)), height=300)
+
+# --- 5. ADVANCED MIC RECORDER WITH FEEDBACK ---
+st.markdown("---")
+st.subheader("🎙️ Start Speaking! (Tap the Mic Below)")
+cols = st.columns([1, 3, 1])
 with cols[1]:
     audio_info = mic_recorder(
-        start_prompt="Tap to Speak",
-        stop_prompt="Processing...",
+        start_prompt="🗣️ Tap to Record Your English",
+        stop_prompt="🔄 Transcribing & Responding...",
         just_once=True,
         use_container_width=True,
-        key='recorder'
+        key='advanced_recorder'
     )
 
-# --- 6. LOGIC ---
+# --- 6. ENHANCED LOGIC WITH COMPREHENSIVE LEARNING TRACKING ---
 if audio_info:
     try:
-        # STEP 1: Transcription
-        audio_file = ("sample.wav", audio_info['bytes'], "audio/wav")
-        user_text = client.audio.transcriptions.create(
+        # STEP 1: Advanced Transcription with Language Detection
+        audio_file = ("input.wav", audio_info['bytes'], "audio/wav")
+        transcription = client.audio.transcriptions.create(
             file=audio_file,
             model="whisper-large-v3-turbo",
-            response_format="text"
+            response_format="json",
+            language="en" # Force English detection
         )
+        user_text = transcription.text.strip()
         
-        # Display User Message
+        if not user_text:
+            st.warning("😶 No speech detected. Please try again!")
+            st.stop()
+        
+        # Add timestamp
+        user_message = {"role": "user", "content": user_text, "timestamp": datetime.now().strftime("%H:%M")}
         with st.chat_message("user"):
             st.markdown(user_text)
-        st.session_state.messages.append({"role": "user", "content": user_text})
-
-        # STEP 2: Thinking
-        SYSTEM_PROMPT = """
-            ### IDENTITY
-            You are an expert "Adaptive English Language Coach." Your goal is to move the user from their current level (Beginner/Intermediate) toward native-like fluency through natural conversation.
-
-            ### CORE PEDAGOGY: THE 4-STEP RESPONSE
-            For every user input, your response must follow this sequence:
-            1. CORRECTION: If the user made a mistake (grammar, word choice, or awkward phrasing), start with: "Correction: [Natural version of their sentence]". Briefly explain why (e.g., "We use 'since' for a point in time"). If no mistake, skip this.
-            2. ENCOURAGEMENT: Give a very brief, friendly reaction to their content (e.g., "That sounds like a great weekend!").
-            3. THE CHALLENGE: Introduce ONE new "Level-Up" element. 
-               - If user is Beginner: Suggest a slightly better word.
-               - If user is Intermediate: Introduce a common idiom or phrasal verb related to the topic.
-               - If user is Advanced: Challenge their nuance or formal vs. informal tone.
-            4. THE HOOK: Always end with an open-ended question to keep them speaking.
-
-            ### STYLE GUIDELINES
-            - ADAPTIVE LEVEL: Listen to the user's complexity. Speak at a level just 10% harder than theirs (i.e., use the 'i+1' theory of language acquisition).
-            - CONCISE: Keep your total response under 3 sentences (to prevent the user from being overwhelmed).
-            - NATURAL: Use modern, spoken contractions (I'm, don't, gonna) unless teaching formal English.
-            - FOCUS: Prioritize corrections on common "ESL" errors like articles (a/an/the), prepositions, and verb tenses.
-            """
-        chat_messages = [{"role": "system", "content": SYSTEM_PROMPT}] + st.session_state.messages
+        st.session_state.messages.append(user_message)
         
-        completion = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=chat_messages
-        )
-        ai_response = completion.choices[0].message.content
-
-        # Display AI Message
+        # Update progress: Count words
+        word_count = len(user_text.split())
+        st.session_state.progress["total_words"] += word_count
+        
+        # Recalculate fluency_score here for use in success message (scope fix)
+        fluency_score = min(100, st.session_state.progress["sessions"] * 10 + len(st.session_state.progress["vocabulary"]))
+        
+        # STEP 2: Comprehensive All-in-One System Prompt
+        STYLE_ADAPTATIONS = {
+            "Friendly": "Be warm, encouraging, and use emojis occasionally. 😊",
+            "Strict": "Be direct with corrections, but supportive. No sugarcoating errors.",
+            "Professional": "Use formal language, focus on precision and clarity.",
+            "Motivational": "Inspire confidence! End with empowering questions.",
+            "Humorous": "Add light-hearted jokes or puns related to English learning."
+        }
+        
+        LEVEL_ADAPTATIONS = {
+            "Beginner": "Use simple sentences. Focus on basics: vocabulary, simple grammar, articles/prepositions. Introduce 1 easy word + basic pronunciation tip.",
+            "Intermediate": "Build on mid-level structures. Introduce 1 idiom/phrasal verb + grammar nuance (tenses/conditionals). Include cultural note.",
+            "Advanced": "Dive into nuances, idioms, cultural references. Challenge with synonyms, debate prompts, advanced pronunciation (intonation/stress). Suggest reading/listening resources."
+        }
+        
+        SYSTEM_PROMPT = f"""
+        ### IDENTITY & TOP-LEVEL GOAL
+        You are the Ultimate Adaptive English Mastery Coach – a single, all-encompassing guide to fluent, native-like English. Your mission: Transform the user holistically across ALL pillars of language learning in every interaction: Speaking (fluency/pronunciation), Listening (via response modeling), Reading/Writing (implicit through examples), Grammar/Vocab/Idioms, Cultural Nuances, and Confidence-Building. Adapt dynamically to {st.session_state.user_level} using i+1 (introduce concepts 10% beyond their current grasp). Track progress across sessions for personalized evolution.
+        ### STYLE INTEGRATION: {STYLE_ADAPTATIONS[tutor_style]}
+        
+        ### LEVEL-SPECIFIC FOCUS: {LEVEL_ADAPTATIONS[st.session_state.user_level]}
+        
+        ### CORE PEDAGOGY: 7-STEP ALL-IN-ONE LEARNING CYCLE (Ultra-Concise: 4 Sentences Max Total)
+        Respond in a seamless, natural flow blending these steps – no rigid numbering unless correcting. Prioritize immersion over lists.
+        1. **ERROR SCAN & CORRECTION**: Detect grammar (tenses/articles/prepositions), vocab choice, phrasing, or pronunciation hints (e.g., "Stress 'im-POR-tant' for emphasis"). If error: "Quick fix: [Natural rephrase]. (Why? [1-phrase ESL tip])". Skip if flawless.
+        2. **CONTENT ENGAGEMENT**: Mirror & encourage their idea (e.g., "That's a fun story – reminds me of...").
+        3. **VOCAB/IDOM EXPANSION**: Weave in 1 targeted element: "Swap in 'exhilarated' (thrilled + energized) – like when you nailed that presentation!".
+        4. **GRAMMAR DEEP-DIVE**: If relevant, slip in a micro-lesson: "Notice how 'would have' adds that hypothetical vibe?".
+        5. **PRONUNCIATION/CULTURAL TIP**: Add a quick audio-friendly note: "Say it with rising intonation for questions – Brits love that polite lift!".
+        6. **SKILLS CROSS-TRAIN**: Suggest a mini-extension: "Try describing it in past perfect next" or "Listen to a podcast on this topic for real accents".
+        7. **MOMENTUM HOOK**: Always propel forward with an open, thematic question: "How'd that feel? What's your wildest travel tale?".
+        
+        ### GLOBAL GUIDELINES FOR HOLISTIC LEARNING
+        - **IMMERSIVE & NATURAL**: Contractions (I'm, gonna), varied sentence lengths for rhythm. Mirror user's energy/tone.
+        - **BALANCED COVERAGE**: Rotate focus across pillars (e.g., vocab one turn, grammar next) to "learn everything" without overload.
+        - **PROGRESS TRACKING**: Tag new elements: [VOCAB: word|meaning|example], [IDIOM: phrase|meaning|usage], [GRAMMAR: rule|example], [PRONUN: tip|phonetic], [CULTURE: note|context], [ACHIEVE: milestone|reward].
+        - **CONCISE YET RICH**: Under 4 sentences. End strong to spark reply.
+        - **INSPIRATIONAL ARC**: Build user's confidence – every response advances them toward "top-level" fluency.
+        """
+        
+        chat_messages = [{"role": "system", "content": SYSTEM_PROMPT}] + \
+                        [{"role": msg["role"], "content": msg["content"]} for msg in st.session_state.messages[-10:]] # Last 10 for context
+        
+        # STEP 3: Generate Response
+        with st.spinner("🤔 AI is thinking..."):
+            completion = client.chat.completions.create(
+                model=model,
+                messages=chat_messages,
+                temperature=0.7 if tutor_style in ["Friendly", "Humorous"] else 0.5,
+                max_tokens=300 # Slightly more for richer content
+            )
+            ai_response = completion.choices[0].message.content
+        
+        # Enhanced Parsing for All Trackers
+        tags = {
+            "VOCAB": ("vocabulary", lambda parts: {"Word": parts[0].strip(), "Meaning": parts[1].strip(), "Example": parts[2].strip()}),
+            "IDIOM": ("idioms_learned", lambda parts: {"Idiom": parts[0].strip(), "Meaning": parts[1].strip(), "Usage": parts[2].strip()}),
+            "GRAMMAR": ("grammar_tips", lambda parts: {"Rule": parts[0].strip(), "Example": " | ".join(parts[1:]).strip()}),
+            "PRONUN": ("pronunciation_notes", lambda parts: {"Tip": " | ".join(parts).strip()}),
+            "CULTURE": ("grammar_tips", lambda parts: {"Cultural Note": " | ".join(parts).strip()}), # Reuse for simplicity
+            "ACHIEVE": ("achievements", lambda parts: [" | ".join(parts).strip()])
+        }
+        
+        for tag, (key, parser) in tags.items():
+            if f"[{tag}:" in ai_response:
+                matches = [m.split("]")[0].split("|") for m in ai_response.split(f"[{tag}:") if "|" in m and "]" in m]
+                for match in matches:
+                    if len(match) >= 2:
+                        item = parser(match)
+                        if isinstance(st.session_state.progress[key], list):
+                            st.session_state.progress[key].append(item)
+                        st.session_state.progress["corrections_made"] += 1 if tag == "ACHIEVE" else 0
+        
+        # Display AI Response (Textual reply - kept as is)
+        ai_message = {"role": "assistant", "content": ai_response, "timestamp": datetime.now().strftime("%H:%M")}
         with st.chat_message("assistant"):
             st.markdown(ai_response)
-        st.session_state.messages.append({"role": "assistant", "content": ai_response})
-
-        # STEP 3: Voice
-        tts = gTTS(text=ai_response, lang='en', tld=tld)
-        audio_fp = io.BytesIO()
-        tts.write_to_fp(audio_fp)
-        st.audio(audio_fp, format="audio/mp3", autoplay=True)
-
+            
+            # FIXED VOICE: Use st.audio with play button (no autoplay issues) + Voice toggle
+            if enable_voice:
+                speed = 1.0 if st.session_state.user_level == "Beginner" else 1.2
+                tts = gTTS(text=ai_response, lang='en', tld=tld, slow=(speed < 1.0))
+                
+                audio_fp = io.BytesIO()
+                tts.write_to_fp(audio_fp)
+                audio_fp.seek(0)
+                
+                # Save audio bytes to session_state for download/play
+                if "latest_audio" not in st.session_state:
+                    st.session_state.latest_audio = {}
+                st.session_state.latest_audio["bytes"] = audio_fp.getvalue()
+                st.session_state.latest_audio["format"] = "audio/mp3"
+                
+                # Display play button + audio
+                col_audio1, col_audio2 = st.columns([3, 1])
+                with col_audio1:
+                    st.audio(st.session_state.latest_audio["bytes"], format=st.session_state.latest_audio["format"])
+                with col_audio2:
+                    if st.button("🔊 Play Tutor Voice", key=f"play_{len(st.session_state.messages)}"):
+                        # Force re-render to play (simple toggle)
+                        st.session_state.play_trigger = time.time()
+        
+        st.session_state.messages.append(ai_message)
+        
+        # Feedback Toast
+        st.success(f"✅ Response ready! Words spoken: {word_count} | Fluency: {fluency_score}% | New Learnings: {len(st.session_state.progress.get('vocabulary', [])) + len(st.session_state.progress.get('idioms_learned', []))} unlocked! {'(Voice ready – tap ▶️)' if enable_voice else ''}")
+        
+        # Auto-scroll and rerun (now with container, scrolls better)
+        auto_scroll()
+        st.rerun()
+        
     except Exception as e:
-        st.error(f"Please check your API Key: {e}")
+        st.error(f"❌ Oops! Error: {str(e)}. Check API key or connection.")
+        if "unauthorized" in str(e).lower():
+            st.warning("🔑 Invalid API key – please update in sidebar.")
+
+# Final auto-scroll
+auto_scroll()
+
+# --- 7. FOOTER WITH TIPS ---
+st.markdown("---")
+st.markdown("""
+<div style='text-align: center; color: #7f8c8d;'>
+    💡 **Pro Tip**: Speak freely – the AI covers EVERY aspect of English in one seamless flow! Toggle voice in sidebar & tap ▶️ to hear tutor speak.
+    <br> Built with ❤️ using Streamlit & Groq. Share your mastery journey!
+</div>
+""", unsafe_allow_html=True)
