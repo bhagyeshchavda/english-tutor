@@ -188,12 +188,12 @@ if enable_vocabulary_tracker:
     if st.session_state.progress["vocabulary"]:
         st.subheader("📚 Vocabulary Learned")
         vocab_df = pd.DataFrame(st.session_state.progress["vocabulary"], columns=["Word", "Meaning", "Example"])
-        st.dataframe(vocab_df, width="stretch", hide_index=True)  # FIXED: use_container_width -> width="stretch"
+        st.dataframe(vocab_df, use_container_width=True, hide_index=True)  # REVERTED: use_container_width=True (compatible)
     
     if st.session_state.progress["idioms_learned"]:
         st.subheader("🗣️ Idioms & Phrases")
         idioms_df = pd.DataFrame(st.session_state.progress["idioms_learned"], columns=["Idiom", "Meaning", "Usage"])
-        st.dataframe(idioms_df, width="stretch", hide_index=True)  # FIXED: use_container_width -> width="stretch"
+        st.dataframe(idioms_df, use_container_width=True, hide_index=True)  # REVERTED: use_container_width=True (compatible)
 
 if enable_progress_chart and st.session_state.progress["sessions"] > 1:
     st.subheader("📊 Progress Over Time")
@@ -232,7 +232,7 @@ with cols[1]:
         start_prompt="🗣️ Tap to Record Your English",
         stop_prompt="🔄 Transcribing & Responding...",
         just_once=True,
-        width="stretch",  # FIXED: use_container_width -> width="stretch"
+        use_container_width=True,  # REVERTED: use_container_width=True (fixes TypeError - 'width' not supported in v0.0.8)
         key='advanced_recorder'
     )
 
