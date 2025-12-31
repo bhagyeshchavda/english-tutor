@@ -208,9 +208,7 @@ with cols[1]:
         stop_prompt="🔄 Transcribing & Responding...",
         just_once=True,
         use_container_width=True,
-        key='advanced_recorder',
-        recording_color="#4CAF50",
-        idle_color="#f0f0f0"
+        key='advanced_recorder'
     )
 
 # --- 6. ENHANCED LOGIC WITH COMPREHENSIVE LEARNING TRACKING ---
